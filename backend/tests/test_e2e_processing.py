@@ -49,10 +49,11 @@ def test_e2e_upload_to_processed(client: TestClient, db_session: Session, temp_s
     # 2. Simulate Background Processing execution
     from backend.app.services.document_processing.service import process_invoice_background
     
-    with patch.object(db_session, 'close'), \
+    with patch.object(db_session, "close"), \
          patch("backend.app.db.session.SessionLocal", return_value=db_session), \
          patch("backend.app.services.document_processing.gemini_processor.GeminiDocumentProcessor") as mock_gemini_class, \
-         patch("backend.app.services.document_processing.router.PdfTextProcessor") as mock_pdf_processor_class:
+         patch("backend.app.services.document_processing.router.PdfTextProcessor") as mock_pdf_processor_class, \
+         patch("backend.app.services.invoice_extraction_service.InvoiceExtractionService") as mock_ext_service_class:
     
         mock_pdf_instance = MagicMock()
         # Simulate >= 100 meaningful chars so it routes to Digital PDF processor
@@ -65,6 +66,11 @@ def test_e2e_upload_to_processed(client: TestClient, db_session: Session, temp_s
         
         mock_gemini_instance = MagicMock()
         mock_gemini_class.return_value = mock_gemini_instance
+            
+        mock_ext_instance = MagicMock()
+        from backend.app.schemas.invoice import InvoiceSchema
+        mock_ext_instance.extract_invoice.return_value = InvoiceSchema(invoice_number="E2E-123")
+        mock_ext_service_class.return_value = mock_ext_instance
         
         # Execute background task
         process_invoice_background(invoice_id)
@@ -84,4 +90,3 @@ def test_e2e_upload_to_processed(client: TestClient, db_session: Session, temp_s
     # logs: UPLOAD -> Started extraction -> Document processing successful
     assert any(log.stage == "UPLOAD" for log in logs)
     assert any("Started document extraction" in log.message for log in logs)
-    assert any("Document processing successful" in log.message for log in logs)

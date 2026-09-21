@@ -85,7 +85,7 @@ InvoiceAI demonstrates modern **AI Engineering** by treating Large Language Mode
 | `currency` | `string` | **Required** | No | 3-letter ISO 4217 code (e.g., `USD`, `EUR`, `GBP`, `IDR`). Defaults to `USD` if ambiguous symbol (`$`). |
 | `subtotal` | `decimal` | Optional | Yes | Positive decimal (2 decimal places). If null, computed from line items or `total - tax`. |
 | `tax` | `decimal` | Optional | Yes | Non-negative decimal. Defaults to `0.00` if not present. |
-| `total` | `decimal` | **Required** | No | Strictly positive decimal ($> 0.00$). Must match $\text{subtotal} + \text{tax} \pm 0.05$. |
+| `total` | `decimal` | **Required** | No | Strictly positive decimal ($> 0.00$). Must match $\text{subtotal} + \text{tax} \pm 0.01$. |
 | `line_items` | `list[Item]`| Optional | No | Empty list `[]` if document does not itemize lines. |
 | `confidence_score`| `float` | System | No | Range $0.00 - 1.00$. Derived from completeness and mathematical consistency. |
 
@@ -132,11 +132,11 @@ LLMs are creative language simulators, not reliable databases. In financial docu
 1. **Mathematical Reconciliation**:
    $$\text{Calculated Total} = \text{subtotal} + \text{tax}$$
    $$\Delta_{\text{total}} = |\text{extracted total} - \text{Calculated Total}|$$
-   - If $\Delta_{\text{total}} \le 0.05$ (floating-point / rounding difference): Accept and auto-reconcile.
-   - If $\Delta_{\text{total}} > 0.05$: Flag status as `NEEDS_REVIEW` with an explicit reason logged (`Total does not equal subtotal + tax`).
+   - If $\Delta_{\text{total}} \le 0.01$ (floating-point / rounding difference): Accept and auto-reconcile.
+   - If $\Delta_{\text{total}} > 0.01$: Flag status as `NEEDS_REVIEW` with an explicit reason logged (`Total does not equal subtotal + tax`).
 2. **Line Item Sum Check**:
    $$\Delta_{\text{items}} = |\sum \text{line\_item.amount} - \text{subtotal}|$$
-   - If line items exist and $\Delta_{\text{items}} > 0.05$: Flag warning `Line items sum does not match subtotal`.
+   - If line items exist and $\Delta_{\text{items}} > 0.01$: Flag warning `Line items sum does not match subtotal`.
 3. **Temporal Validity Check**:
    - If `due_date < invoice_date`: Flag status as `NEEDS_REVIEW` (`Due date precedes invoice date`).
    - If `invoice_date > today + 1 day`: Flag status as `NEEDS_REVIEW` (`Invoice date is in the future`).
@@ -148,7 +148,7 @@ Rather than discarding documents that are slightly uncertain, InvoiceAI implemen
 
 1. **`PROCESSED` (High Confidence)**:
    - All mandatory fields present and well-formed.
-   - Mathematics reconciles within $0.05 tolerance.
+   - Mathematics reconciles within $0.01 tolerance.
    - Ready for automated export and accounting sync without human intervention.
 2. **`NEEDS_REVIEW` (Medium Confidence / Warning)**:
    - Mandatory fields present, but minor mathematical discrepancy or missing optional fields (e.g., subtotal missing, due date absent, line item sum discrepancy).
@@ -257,7 +257,7 @@ Even for an MVP, basic security hygiene prevents server compromise and data corr
 *Concept*: Cost optimization, latency, and reliability. Digital-native PDFs can have their text layer extracted in under 30 milliseconds with 100% fidelity using `pdfplumber` at near-zero compute cost. Sending high-resolution page images to a multimodal LLM consumes hundreds of vision tokens per page, increases API latency from 1s to 6-8s, and introduces visual transcription errors on crisp computer-generated text. A hybrid router that detects the text layer first optimizes cost and speed.
 
 #### Q2: "How do you handle LLM hallucinations in financial totals?"
-*Concept*: Zero-trust schema validation and programmatic reconciliation. The LLM is never trusted as the source of truth for arithmetic. We use Pydantic to parse numeric fields into `Decimal` (avoiding floating-point inaccuracies), then run a deterministic business logic layer: $\text{calculated} = \text{subtotal} + \text{tax}$. If the LLM extracts an inconsistent total, we calculate the discrepancy. If it exceeds rounding tolerance ($0.05$), the invoice is immediately downgraded to `NEEDS_REVIEW` and flagged with the exact arithmetic discrepancy.
+*Concept*: Zero-trust schema validation and programmatic reconciliation. The LLM is never trusted as the source of truth for arithmetic. We use Pydantic to parse numeric fields into `Decimal` (avoiding floating-point inaccuracies), then run a deterministic business logic layer: $\text{calculated} = \text{subtotal} + \text{tax}$. If the LLM extracts an inconsistent total, we calculate the discrepancy. If it exceeds rounding tolerance ($0.01$), the invoice is immediately downgraded to `NEEDS_REVIEW` and flagged with the exact arithmetic discrepancy.
 
 #### Q3: "Why did you use `Decimal` instead of `float` for currency amounts?"
 *Concept*: Binary floating-point representation errors. IEEE 754 floating-point numbers cannot accurately represent base-10 fractions (e.g., $0.1 + 0.2 = 0.30000000000000004$). In financial software, rounding errors compound, failing equality checks and corrupting accounting ledgers. In Python, `decimal.Decimal` and PostgreSQL `NUMERIC(12, 2)` guarantee exact base-10 arithmetic.

@@ -102,3 +102,27 @@ class InvoiceDetailResponse(BaseModel):
     logs: List[ProcessingLogResponse] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
+
+# --- Phase 3: AI Extraction Structured Schemas ---
+
+class Vendor(BaseModel):
+    name: Optional[str] = None
+    address: Optional[str] = None
+    tax_id: Optional[str] = None
+
+class LineItem(BaseModel):
+    description: Optional[str] = None
+    quantity: Optional[Decimal] = Field(default=None, ge=Decimal('0'))
+    unit_price: Optional[Decimal] = Field(default=None, ge=Decimal('0'))
+    amount: Optional[Decimal] = Field(default=None, ge=Decimal('0'))
+
+class InvoiceSchema(BaseModel):
+    invoice_number: Optional[str] = None
+    vendor: Optional[Vendor] = None
+    invoice_date: Optional[date] = None
+    due_date: Optional[date] = None
+    currency: Optional[str] = None
+    subtotal: Optional[Decimal] = Field(default=None, ge=Decimal('0'))
+    tax: Optional[Decimal] = Field(default=None, ge=Decimal('0'))
+    total: Optional[Decimal] = Field(default=None, ge=Decimal('0'))
+    line_items: Optional[List[LineItem]] = Field(default_factory=list)

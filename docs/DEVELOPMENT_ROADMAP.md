@@ -133,7 +133,7 @@ InvoiceAi/
 ---
 
 ### Phase 3: AI Extraction, Structured Outputs & Validation Pipeline
-- **Status**: NOT STARTED
+- **Status**: COMPLETED
 - **Objective**: Implement Gemini API integration with structured JSON enforcement and the programmatic business logic validator.
 - **Features**:
   - Integration of official `google-genai` SDK targeting `gemini-2.5-flash`.
@@ -141,8 +141,8 @@ InvoiceAi/
   - Strict system prompt with anti-injection XML delimiters (`<invoice_document>`).
   - Fallback logic: text prompt for digital PDFs, multimodal image prompt for scans/photos.
   - Deterministic business validator service:
-    - Math check: $\text{subtotal} + \text{tax} = \text{total} \pm 0.05$.
-    - Line item sum check: $\sum \text{items} = \text{subtotal} \pm 0.05$.
+    - Math check: $\text{subtotal} + \text{tax} = \text{total} \pm 0.01$.
+    - Line item sum check: $\sum \text{items} = \text{subtotal} \pm 0.01$.
     - Date sequence check: $\text{due\_date} \ge \text{invoice\_date}$.
     - ISO currency normalization.
   - Status classification logic (`PROCESSED` vs `NEEDS_REVIEW` vs `FAILED`).

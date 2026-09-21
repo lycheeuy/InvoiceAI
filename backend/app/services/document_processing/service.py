@@ -3,19 +3,20 @@ import uuid
 from pathlib import Path
 from sqlalchemy.orm import Session
 
-from backend.app.models.invoice import Invoice, InvoiceStatus
+from backend.app.models.invoice import Invoice, InvoiceStatus, InvoiceLineItem
 from backend.app.models.log import ProcessingLog
 from backend.app.core.config import settings
 from .router import DocumentRouter
+from backend.app.services.invoice_extraction_service import InvoiceExtractionService
+from backend.app.services.invoice_validation_service import InvoiceValidationService
 
 logger = logging.getLogger(__name__)
 
-def process_invoice(db: Session, invoice_id: uuid.UUID, router: DocumentRouter) -> Invoice:
+def process_invoice(db: Session, invoice_id: uuid.UUID, router: DocumentRouter, extraction_service: InvoiceExtractionService = None) -> Invoice:
     invoice = db.get(Invoice, invoice_id)
     if not invoice:
         raise ValueError(f"Invoice with id {invoice_id} not found.")
 
-    # Status transition to EXTRACTING
     invoice.status = InvoiceStatus.EXTRACTING.value
     
     log_extracting = ProcessingLog(
@@ -29,80 +30,132 @@ def process_invoice(db: Session, invoice_id: uuid.UUID, router: DocumentRouter) 
     db.refresh(invoice)
 
     try:
-        # Resolve file path
-        # Assuming storage_path is relative to the backend root or absolute
-        # We need to construct the absolute path safely based on FILE_STORAGE_PATH
-        # But if storage_path is already absolute or relative to cwd, we can just use Path(invoice.storage_path)
-        # We should ensure it uses FILE_STORAGE_PATH safely
-        
-        # In phase 1, storage_path was likely just relative or absolute.
-        # Let's resolve it carefully:
         file_path = Path(invoice.storage_path)
         if not file_path.is_absolute():
-            # Based on standard logic, we might need to prepend base dir
-            base_dir = Path(settings.FILE_STORAGE_PATH)
-            if not base_dir.is_absolute():
-                base_dir = Path(__file__).resolve().parent.parent.parent.parent / base_dir
-            # For safety, just use the storage_path directly if it's already an absolute path saved
-            # Or if it's relative, join it. Assuming Phase 1 saved it correctly.
-            # Let's just use Path(invoice.storage_path)
             pass
             
         if not file_path.exists():
             raise FileNotFoundError(f"Stored file {file_path} not found.")
 
+        # 1. Document Routing (Layer 1)
         result = router.process(file_path)
 
         if result.errors:
             error_msg = "; ".join(result.errors)
             raise RuntimeError(f"Extraction failed: {error_msg}")
 
-        invoice.status = InvoiceStatus.PROCESSED.value
-        # Note: Invoice field extraction is NOT part of Task 3. We are just storing raw text.
-        # But there's no `extracted_text` column on Invoice. We might store it in raw_llm_response or just log it.
-        # Since field extraction is not part of this task, we just mark as PROCESSED.
-        invoice.raw_llm_response = {"extracted_text": result.extracted_text}
+        extracted_text = result.extracted_text or ""
+        invoice.raw_llm_response = {"extracted_text": extracted_text}
         
-        log_success = ProcessingLog(
+        db.add(ProcessingLog(
             invoice_id=invoice.id,
             stage="PROCESSING",
             log_level="INFO",
-            message="Document processing successful."
-        )
-        db.add(log_success)
+            message="Document routing and text processing successful."
+        ))
+
+        # 2. Structured Extraction (Layer 2)
+        ext_service = extraction_service or InvoiceExtractionService()
+        invoice_schema = ext_service.extract_invoice(extracted_text)
         
-    except Exception as e:
-        logger.error(f"Failed to process invoice {invoice_id}: {e}")
-        invoice.status = InvoiceStatus.FAILED.value
-        log_error = ProcessingLog(
+        db.add(ProcessingLog(
             invoice_id=invoice.id,
             stage="PROCESSING",
-            log_level="ERROR",
-            message=str(e)
-        )
-        db.add(log_error)
-    
-    db.commit()
-    db.refresh(invoice)
+            log_level="INFO",
+            message="Structured extraction successful."
+        ))
+
+        # 3. Deterministic Financial Validation (Layer 3)
+        val_result = InvoiceValidationService.validate_invoice(invoice_schema)
+
+        # Persist structured data
+        if invoice_schema.vendor:
+            invoice.vendor_name = invoice_schema.vendor.name
+        invoice.invoice_number = invoice_schema.invoice_number
+        invoice.invoice_date = invoice_schema.invoice_date
+        invoice.due_date = invoice_schema.due_date
+        invoice.currency = invoice_schema.currency
+        invoice.subtotal = invoice_schema.subtotal
+        invoice.tax = invoice_schema.tax
+        invoice.total = invoice_schema.total
+
+        # Persist line items
+        if invoice_schema.line_items:
+            for i, li in enumerate(invoice_schema.line_items):
+                db_li = InvoiceLineItem(
+                    invoice_id=invoice.id,
+                    line_number=i + 1,
+                    description=li.description or "",
+                    quantity=li.quantity,
+                    unit_price=li.unit_price,
+                    amount=li.amount if li.amount is not None else 0
+                )
+                db.add(db_li)
+
+        db.add(ProcessingLog(
+            invoice_id=invoice.id,
+            stage="PROCESSING",
+            log_level="INFO",
+            message="Financial validation completed."
+        ))
+
+
+        if val_result.is_valid:
+            invoice.status = InvoiceStatus.PROCESSED.value
+            invoice.review_reason = None
+            db.add(ProcessingLog(
+                invoice_id=invoice.id,
+                stage="PROCESSING",
+                log_level="INFO",
+                message="Processing completed successfully."
+            ))
+        else:
+            invoice.status = InvoiceStatus.NEEDS_REVIEW.value
+            invoice.review_reason = "; ".join(val_result.errors)
+            db.add(ProcessingLog(
+                invoice_id=invoice.id,
+                stage="PROCESSING",
+                log_level="WARNING",
+                message="Processing needs review due to financial inconsistencies."
+            ))
+            
+        db.commit()
+        db.refresh(invoice)
+
+    except Exception as e:
+
+        logger.error(f"Failed to process invoice {invoice_id}: {e}")
+        db.rollback()
+        try:
+            invoice = db.get(Invoice, invoice_id)
+            if invoice:
+                invoice.status = InvoiceStatus.FAILED.value
+                db.add(ProcessingLog(
+                    invoice_id=invoice.id,
+                    stage="PROCESSING",
+                    log_level="ERROR",
+                    message=str(e)
+                ))
+                db.commit()
+        except Exception as commit_err:
+            db.rollback()
+            logger.error(f"Failed to persist FAILED status for invoice {invoice_id}: {commit_err}")
+
     
     return invoice
 
-
 def process_invoice_background(invoice_id: uuid.UUID):
-    """
-    Background wrapper for processing an invoice.
-    Uses a fresh database session so it isn't tied to the request lifecycle.
-    """
     from backend.app.db.session import SessionLocal
     from .gemini_processor import GeminiDocumentProcessor
+    from backend.app.services.invoice_extraction_service import InvoiceExtractionService
 
     db = SessionLocal()
     try:
         gemini_processor = GeminiDocumentProcessor()
         router = DocumentRouter(gemini_processor=gemini_processor)
-        process_invoice(db, invoice_id, router)
+        extraction_service = InvoiceExtractionService()
+        process_invoice(db, invoice_id, router, extraction_service)
     except Exception as e:
         logger.error(f"Fatal error in background processing for invoice {invoice_id}: {e}")
     finally:
         db.close()
-
