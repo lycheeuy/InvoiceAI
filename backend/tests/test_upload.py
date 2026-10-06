@@ -74,7 +74,7 @@ def test_unsupported_file_extension(client: TestClient):
     response = client.post("/api/v1/invoices/upload", files=files)
 
     assert response.status_code == 415
-    assert "unsupported" in response.json()["detail"].lower()
+    assert "unsupported" in response.json()["error"]["message"].lower()
 
 
 def test_invalid_magic_bytes(client: TestClient):
@@ -84,7 +84,7 @@ def test_invalid_magic_bytes(client: TestClient):
     response = client.post("/api/v1/invoices/upload", files=files)
 
     assert response.status_code == 415
-    assert "signature" in response.json()["detail"].lower()
+    assert "signature" in response.json()["error"]["message"].lower()
 
 
 def test_signature_and_extension_mismatch(client: TestClient, valid_png_bytes: bytes):
@@ -93,7 +93,7 @@ def test_signature_and_extension_mismatch(client: TestClient, valid_png_bytes: b
     response = client.post("/api/v1/invoices/upload", files=files)
 
     assert response.status_code == 415
-    assert "mismatch" in response.json()["detail"].lower()
+    assert "mismatch" in response.json()["error"]["message"].lower()
 
 
 def test_file_larger_than_10mb(client: TestClient):
@@ -104,7 +104,7 @@ def test_file_larger_than_10mb(client: TestClient):
     response = client.post("/api/v1/invoices/upload", files=files)
 
     assert response.status_code == 413
-    assert "exceeds" in response.json()["detail"].lower()
+    assert "exceeds" in response.json()["error"]["message"].lower()
 
 
 def test_empty_file_upload(client: TestClient):
@@ -113,7 +113,7 @@ def test_empty_file_upload(client: TestClient):
     response = client.post("/api/v1/invoices/upload", files=files)
 
     assert response.status_code == 400
-    assert "empty" in response.json()["detail"].lower()
+    assert "empty" in response.json()["error"]["message"].lower()
 
 
 def test_duplicate_sha256_upload(client: TestClient, valid_pdf_bytes: bytes):
@@ -129,9 +129,9 @@ def test_duplicate_sha256_upload(client: TestClient, valid_pdf_bytes: bytes):
     res_2 = client.post("/api/v1/invoices/upload", files=files_2)
 
     assert res_2.status_code == 409
-    detail = res_2.json()["detail"]
-    assert "duplicate" in detail["message"].lower()
-    assert detail["existing_invoice_id"] == first_id
+    error_data = res_2.json()["error"]
+    assert "duplicate" in error_data["message"].lower()
+    assert error_data["details"]["existing_invoice_id"] == first_id
 
 
 def test_get_invoice_detail_and_status(client: TestClient, valid_pdf_bytes: bytes):

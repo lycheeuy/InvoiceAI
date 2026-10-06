@@ -40,6 +40,8 @@ app.add_middleware(
 app.include_router(health_router, tags=["Health"])
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
+from backend.app.core.handlers import register_exception_handlers
+register_exception_handlers(app)
 
 if __name__ == "__main__":
     import uvicorn

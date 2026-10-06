@@ -1,20 +1,23 @@
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status, BackgroundTasks
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status, BackgroundTasks
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from backend.app.db.session import get_db
-from backend.app.models.invoice import Invoice
+from backend.app.models.invoice import Invoice, InvoiceStatus
 from backend.app.schemas.invoice import (
     InvoiceDetailResponse,
     InvoiceListItem,
     InvoiceListResponse,
     InvoiceStatusResponse,
     InvoiceUploadResponse,
+    InvoiceUpdateRequest,
 )
+from backend.app.schemas.error import ErrorResponse
 from backend.app.services.invoice_service import InvoiceService
+from backend.app.core.exceptions import ResourceNotFoundError
 
 router = APIRouter()
 invoice_service = InvoiceService()
@@ -28,6 +31,13 @@ from backend.app.services.document_processing.service import process_invoice_bac
     status_code=status.HTTP_202_ACCEPTED,
     summary="Upload invoice file for ingestion and processing",
     tags=["Invoices"],
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid Request"},
+        409: {"model": ErrorResponse, "description": "Duplicate Resource"},
+        413: {"model": ErrorResponse, "description": "File Too Large"},
+        415: {"model": ErrorResponse, "description": "Unsupported Media Type"},
+        500: {"model": ErrorResponse, "description": "Internal Server Error"},
+    },
 )
 async def upload_invoice(
     background_tasks: BackgroundTasks,
@@ -59,10 +69,14 @@ async def upload_invoice(
     response_model=InvoiceListResponse,
     summary="List invoices with pagination and filters",
     tags=["Invoices"],
+    responses={
+        422: {"model": ErrorResponse, "description": "Validation Error"},
+        500: {"model": ErrorResponse, "description": "Internal Server Error"},
+    },
 )
 def list_invoices(
-    status_filter: Optional[str] = Query(None, alias="status", description="Filter by status"),
-    vendor: Optional[str] = Query(None, description="Search by vendor name"),
+    status_filter: Optional[InvoiceStatus] = Query(None, alias="status", description="Filter by status"),
+    vendor: Optional[str] = Query(None, max_length=100, description="Search by vendor name"),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
     db: Session = Depends(get_db),
@@ -71,7 +85,7 @@ def list_invoices(
     query = select(Invoice)
 
     if status_filter:
-        query = query.where(Invoice.status == status_filter.upper())
+        query = query.where(Invoice.status == status_filter.value)
     if vendor:
         query = query.where(Invoice.vendor_name.ilike(f"%{vendor}%"))
 
@@ -79,9 +93,9 @@ def list_invoices(
     count_query = select(func.count()).select_from(query.subquery())
     total = db.execute(count_query).scalar_one()
 
-    # Apply pagination and sorting (newest first)
+    # Apply pagination and sorting (newest first, fallback to id for determinism)
     offset = (page - 1) * limit
-    paged_query = query.order_by(desc(Invoice.created_at)).offset(offset).limit(limit)
+    paged_query = query.order_by(desc(Invoice.created_at), desc(Invoice.id)).offset(offset).limit(limit)
     invoices = db.execute(paged_query).scalars().all()
 
     items = [
@@ -108,6 +122,11 @@ def list_invoices(
     response_model=InvoiceDetailResponse,
     summary="Get full invoice details, line items, and audit logs",
     tags=["Invoices"],
+    responses={
+        404: {"model": ErrorResponse, "description": "Invoice Not Found"},
+        422: {"model": ErrorResponse, "description": "Validation Error"},
+        500: {"model": ErrorResponse, "description": "Internal Server Error"},
+    },
 )
 def get_invoice(
     id: UUID,
@@ -122,9 +141,9 @@ def get_invoice(
     invoice = db.execute(stmt).scalar_one_or_none()
 
     if not invoice:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Invoice with ID '{id}' was not found.",
+        raise ResourceNotFoundError(
+            message="Invoice not found.",
+            code="INVOICE_NOT_FOUND"
         )
 
     return InvoiceDetailResponse.model_validate(invoice)
@@ -135,6 +154,11 @@ def get_invoice(
     response_model=InvoiceStatusResponse,
     summary="Get lightweight invoice status",
     tags=["Invoices"],
+    responses={
+        404: {"model": ErrorResponse, "description": "Invoice Not Found"},
+        422: {"model": ErrorResponse, "description": "Validation Error"},
+        500: {"model": ErrorResponse, "description": "Internal Server Error"},
+    },
 )
 def get_invoice_status(
     id: UUID,
@@ -147,9 +171,9 @@ def get_invoice_status(
     row = db.execute(stmt).first()
 
     if not row:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Invoice with ID '{id}' was not found.",
+        raise ResourceNotFoundError(
+            message="Invoice not found.",
+            code="INVOICE_NOT_FOUND"
         )
 
     return InvoiceStatusResponse(
@@ -158,4 +182,73 @@ def get_invoice_status(
         review_reason=row.review_reason,
         confidence_score=row.confidence_score,
         updated_at=row.updated_at,
+    )
+
+
+@router.patch(
+    "/invoices/{id}",
+    response_model=InvoiceDetailResponse,
+    summary="Update invoice details after manual review",
+    tags=["Invoices"],
+    responses={
+        404: {"model": ErrorResponse, "description": "Invoice Not Found"},
+        422: {"model": ErrorResponse, "description": "Validation Error"},
+        500: {"model": ErrorResponse, "description": "Internal Server Error"},
+    },
+)
+def update_invoice_endpoint(
+    id: UUID,
+    update_data: InvoiceUpdateRequest,
+    db: Session = Depends(get_db),
+) -> InvoiceDetailResponse:
+    """Updates invoice details, re-runs financial validation, and updates status."""
+    updated_invoice = invoice_service.update_invoice(id, update_data, db)
+    
+    # We need to reload relationships to return InvoiceDetailResponse correctly
+    stmt = (
+        select(Invoice)
+        .where(Invoice.id == id)
+        .options(selectinload(Invoice.line_items), selectinload(Invoice.logs))
+    )
+    invoice = db.execute(stmt).scalar_one()
+    return InvoiceDetailResponse.model_validate(invoice)
+@router.get(
+    "/invoices/{id}/file",
+    summary="Get original uploaded file",
+    tags=["Invoices"],
+    responses={
+        404: {"model": ErrorResponse, "description": "Invoice or File Not Found"},
+        500: {"model": ErrorResponse, "description": "Internal Server Error"},
+    },
+)
+def get_invoice_file(
+    id: UUID,
+    db: Session = Depends(get_db),
+):
+    """Serves the original uploaded invoice file."""
+    from fastapi.responses import FileResponse
+    from pathlib import Path
+    from backend.app.core.config import settings
+    
+    stmt = select(Invoice.storage_path, Invoice.file_type, Invoice.file_name).where(Invoice.id == id)
+    row = db.execute(stmt).first()
+    
+    if not row:
+        raise ResourceNotFoundError(
+            message="Invoice not found.",
+            code="INVOICE_NOT_FOUND"
+        )
+        
+    file_path = Path(settings.FILE_STORAGE_PATH).parent / row.storage_path
+    if not file_path.exists():
+        raise ResourceNotFoundError(
+            message="Original file not found on disk.",
+            code="FILE_NOT_FOUND"
+        )
+        
+    return FileResponse(
+        path=file_path, 
+        media_type=row.file_type,
+        filename=row.file_name,
+        content_disposition_type="inline"
     )

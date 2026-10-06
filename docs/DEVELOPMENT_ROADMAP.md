@@ -156,25 +156,15 @@ InvoiceAi/
   - End-to-end integration test: Upload invoice $\rightarrow$ process in background $\rightarrow$ verify DB state.
 - **Dependencies**: Phase 2 completion.
 
----
-
-### Phase 4: n8n Workflow Automation & Webhooks
-- **Objective**: Implement event-driven webhook dispatching and configure end-to-end automation workflows in n8n.
-- **Features**:
-  - FastAPI webhook dispatcher service with HMAC-SHA256 signature generation.
-  - Webhook triggers for `invoice.processed`, `invoice.needs_review`, and `invoice.failed`.
-  - Local n8n instance setup (via Docker Compose or local npm).
-  - Success Workflow in n8n:
-    - Webhook receiver verifying signature.
-    - Format Discord / Slack notification card with vendor name, total, and invoice number.
-    - Append record row to Google Sheets or mock financial ledger.
-  - Escalation Workflow in n8n:
-    - Receive `invoice.needs_review` event.
-    - Post alert to Slack/Email with direct link to the Next.js review page.
-- **Testing Requirements**:
-  - Unit test for webhook HMAC signature generator.
-  - Webhook dispatch test verifying payload delivery to an HTTP mock / test receiver.
-  - End-to-end trigger verification from FastAPI through n8n.
+### Phase 4: API & Production Readiness
+- **Objective**: Standardize API contracts, error handling, and security.
+- **Tasks**:
+  - Task 1 — API Contract & Response Standardization: COMPLETED
+  - Task 2 — Error Handling & Exception Architecture: COMPLETED
+  - Task 3 — API Validation & Security Hardening: COMPLETED
+  - Task 4 — Invoice API Improvements: COMPLETED
+  - Task 5 — API Testing: COMPLETED
+  - Task 6 — Final Verification: COMPLETED
 - **Dependencies**: Phase 3 completion.
 
 ---
@@ -235,5 +225,5 @@ InvoiceAi/
 - [ ] **Milestone 3**: Extracted document content is processed by Gemini, returning valid structured JSON matching our Pydantic schema 100% of the time.
 - [ ] **Milestone 4**: Invoices with deliberate math discrepancies are automatically flagged as `NEEDS_REVIEW` with exact error messages.
 - [ ] **Milestone 5**: n8n webhook fires reliably upon invoice processing, sending an alert to a notification channel.
-- [ ] **Milestone 6**: Next.js dashboard displays all invoices, allows upload, and offers a split-screen inspection view.
+- [x] **Milestone 6**: Next.js dashboard displays all invoices, allows upload, and offers a split-screen inspection view.
 - [ ] **Milestone 7**: Complete application spins up with a single `docker compose up` command.

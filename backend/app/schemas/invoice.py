@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class InvoiceUploadResponse(BaseModel):
@@ -43,6 +43,15 @@ class ProcessingLogResponse(BaseModel):
     metadata_json: Optional[dict] = None
     created_at: datetime
 
+    @field_validator("message")
+    @classmethod
+    def sanitize_message(cls, v: str) -> str:
+        import re
+        if "Stored file" in v and "not found" in v:
+            return "Stored file not found."
+        v = re.sub(r'(?:[A-Za-z]:\\[^\s]+|/[^\s]+)', '<redacted_path>', v)
+        return v
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -81,7 +90,6 @@ class InvoiceListResponse(BaseModel):
 class InvoiceDetailResponse(BaseModel):
     id: UUID
     file_name: str
-    storage_path: str
     file_hash: str
     file_type: str
     file_size_bytes: int
@@ -126,3 +134,21 @@ class InvoiceSchema(BaseModel):
     tax: Optional[Decimal] = Field(default=None, ge=Decimal('0'))
     total: Optional[Decimal] = Field(default=None, ge=Decimal('0'))
     line_items: Optional[List[LineItem]] = Field(default_factory=list)
+
+class InvoiceLineItemUpdateRequest(BaseModel):
+    id: Optional[UUID] = None
+    description: str
+    quantity: Optional[Decimal] = Field(default=None, ge=Decimal('0'))
+    unit_price: Optional[Decimal] = Field(default=None, ge=Decimal('0'))
+    amount: Decimal
+
+class InvoiceUpdateRequest(BaseModel):
+    vendor_name: Optional[str] = None
+    invoice_number: Optional[str] = None
+    invoice_date: Optional[date] = None
+    due_date: Optional[date] = None
+    currency: Optional[str] = None
+    subtotal: Optional[Decimal] = Field(default=None, ge=Decimal('0'))
+    tax: Optional[Decimal] = Field(default=None, ge=Decimal('0'))
+    total: Optional[Decimal] = Field(default=None, ge=Decimal('0'))
+    line_items: List[InvoiceLineItemUpdateRequest] = Field(default_factory=list)
