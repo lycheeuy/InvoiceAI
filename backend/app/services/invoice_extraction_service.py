@@ -17,7 +17,19 @@ class InvoiceExtractionService:
         if client:
             self.client = client
         elif settings.GEMINI_API_KEY:
-            self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            self.client = genai.Client(
+                api_key=settings.GEMINI_API_KEY,
+                http_options=types.HttpOptions(
+                    retry_options=types.HttpRetryOptions(
+                        attempts=5,
+                        initial_delay=1.0,
+                        max_delay=8.0,
+                        exp_base=2.0,
+                        jitter=1.0,
+                        http_status_codes=[408, 429, 500, 502, 503, 504],
+                    )
+                ),
+            )
         else:
             self.client = None
 

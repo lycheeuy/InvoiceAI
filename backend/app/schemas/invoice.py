@@ -29,7 +29,7 @@ class InvoiceLineItemResponse(BaseModel):
     description: str
     quantity: Optional[Decimal] = None
     unit_price: Optional[Decimal] = None
-    amount: Decimal
+    amount: Optional[Decimal] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -140,7 +140,7 @@ class InvoiceLineItemUpdateRequest(BaseModel):
     description: str
     quantity: Optional[Decimal] = Field(default=None, ge=Decimal('0'))
     unit_price: Optional[Decimal] = Field(default=None, ge=Decimal('0'))
-    amount: Decimal
+    amount: Optional[Decimal] = Field(default=None, ge=Decimal('0'))
 
 class InvoiceUpdateRequest(BaseModel):
     vendor_name: Optional[str] = None

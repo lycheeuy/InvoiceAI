@@ -72,3 +72,38 @@ def test_query_params_max_length(client: TestClient):
     long_vendor = "A" * 101
     response = client.get(f"/api/v1/invoices?vendor={long_vendor}")
     assert response.status_code == 422
+def test_cors_development_origin(client: TestClient):
+    "Test that local development origin is allowed."
+    headers = {
+        "Origin": "http://localhost:3000",
+        "Access-Control-Request-Method": "GET",
+        "Access-Control-Request-Headers": "Content-Type",
+    }
+    response = client.options("/api/v1/invoices", headers=headers)
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"
+
+def test_cors_unconfigured_portfolio_origin_is_rejected(client: TestClient):
+    """Reject the portfolio domain because it is not an InvoiceAI frontend origin."""
+    headers = {
+        "Origin": "https://alifreezi.site",
+        "Access-Control-Request-Method": "GET",
+        "Access-Control-Request-Headers": "Content-Type",
+    }
+
+    response = client.options("/api/v1/invoices", headers=headers)
+
+    assert response.status_code == 400
+    assert "access-control-allow-origin" not in response.headers
+
+
+def test_cors_rejected_origin(client: TestClient):
+    "Test that arbitrary origin is NOT returned in Access-Control-Allow-Origin."
+    headers = {
+        "Origin": "https://evil-site.com",
+        "Access-Control-Request-Method": "GET",
+        "Access-Control-Request-Headers": "Content-Type",
+    }
+    response = client.options("/api/v1/invoices", headers=headers)
+    assert response.status_code == 400
+    assert response.text == "Disallowed CORS origin"

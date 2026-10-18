@@ -1,0 +1,48 @@
+services:
+  invoiceai-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: invoiceai-api:latest
+    container_name: invoiceai-api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8001:8000"
+    env_file:
+      - .env.production
+    environment:
+      DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:?POSTGRES_USER must be set in .env.production}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env.production}@invoiceai-db:5432/${POSTGRES_DB:?POSTGRES_DB must be set in .env.production}"
+    depends_on:
+      invoiceai-db:
+        condition: service_healthy
+    volumes:
+      - /opt/invoiceai/storage:/app/storage
+    networks:
+      - invoiceai-network
+
+  invoiceai-db:
+    image: postgres:17-alpine
+    container_name: invoiceai-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set in .env.production}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env.production}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set in .env.production}
+    volumes:
+      - invoiceai-db-data:/var/lib/postgresql/data
+    networks:
+      - invoiceai-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?POSTGRES_USER must be set in .env.production} -d ${POSTGRES_DB:?POSTGRES_DB must be set in .env.production}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+networks:
+  invoiceai-network:
+    name: invoiceai-network
+    driver: bridge
+
+volumes:
+  invoiceai-db-data:
+    name: invoiceai-db-data

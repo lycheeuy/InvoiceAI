@@ -1,6 +1,9 @@
 import enum
 import uuid
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
+if TYPE_CHECKING:
+    from backend.app.models.log import ProcessingLog
+
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -114,7 +117,10 @@ class InvoiceLineItem(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     quantity: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4), nullable=True)
     unit_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2), nullable=True)
-    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    amount: Mapped[Optional[Decimal]] = mapped_column(
+    Numeric(12, 2),
+    nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

@@ -203,6 +203,10 @@ InvoiceAi/
   - Full clean-slate `docker compose up --build` verification.
   - Zero-to-hero smoke test: Upload all test documents and verify expected statuses.
 - **Dependencies**: All prior phases.
+- **Progress**:
+  - [x] Task 1: Deployment Audit & Planning
+  - [x] Task 2: Security Hardening
+  - [x] Task 3: VPS & Deployment Preparation
 
 ---
 
@@ -227,3 +231,14 @@ InvoiceAi/
 - [ ] **Milestone 5**: n8n webhook fires reliably upon invoice processing, sending an alert to a notification channel.
 - [x] **Milestone 6**: Next.js dashboard displays all invoices, allows upload, and offers a split-screen inspection view.
 - [ ] **Milestone 7**: Complete application spins up with a single `docker compose up` command.
+
+
+## Phase 6 Progress Update - 2026-10-18
+
+- [x] Task 4: Local Docker smoke verification and financial data-integrity correction.
+  - Backend test suite: 114 passed, 2 warnings.
+  - Frontend production build: passed.
+  - PostgreSQL migration `b81f4d2e6a90`: applied and verified.
+  - API health: healthy; database: connected.
+  - Test invoice `TEST-INV-0003`: correctly marked `NEEDS_REVIEW` with a NULL line-item amount.
+- [ ] Milestone 7 remains pending: complete clean-slate verification of the full application stack, including any planned frontend/n8n services, and separate VPS deployment verification.

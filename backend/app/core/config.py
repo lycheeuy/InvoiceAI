@@ -23,9 +23,11 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE: int = 10 * 1024 * 1024  # 10 MB in bytes
     ALLOWED_EXTENSIONS: str = "pdf,png,jpg,jpeg"
 
+    # CORS Configuration
+    CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
     # Gemini Configuration
     GEMINI_API_KEY: str | None = None
-    GEMINI_MODEL: str = "gemini-2.5-flash"
+    GEMINI_MODEL: str = "gemini-3.8-flash"
 
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,
@@ -37,6 +39,10 @@ class Settings(BaseSettings):
     @property
     def allowed_extensions_set(self) -> Set[str]:
         return {ext.strip().lower() for ext in self.ALLOWED_EXTENSIONS.split(",") if ext.strip()}
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
 
 @lru_cache()

@@ -1,0 +1,29 @@
+# Git repository
+.git
+
+# Environment and secrets
+.env
+.env.*
+**/.env
+**/.env.*
+
+# Python virtual environments and cache
+**/.venv/
+**/venv/
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+
+# Frontend is not part of the backend image
+frontend/
+**/node_modules/
+**/.next/
+
+# Local invoice data
+storage/
+
+# Temporary documentation recovery files
+DEVELOPMENT_LOG*.md
+DEVELOPMENT_LOG*.bak

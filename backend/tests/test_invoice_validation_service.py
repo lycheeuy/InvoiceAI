@@ -133,3 +133,25 @@ def test_validator_does_not_mutate():
     original_total = invoice.total
     InvoiceValidationService.validate_invoice(invoice)
     assert invoice.total == original_total
+
+def test_line_item_missing_amount_requires_manual_review():
+    invoice = InvoiceSchema(
+        subtotal=Decimal("100.00"),
+        tax=Decimal("0.00"),
+        total=Decimal("100.00"),
+        line_items=[
+            LineItem(
+                quantity=Decimal("1"),
+                unit_price=Decimal("100.00"),
+                amount=None,
+            )
+        ],
+    )
+
+    result = InvoiceValidationService.validate_invoice(invoice)
+
+    assert result.is_valid is False
+    assert any(
+        "Line item 1 is missing amount" in error
+        for error in result.errors
+    )

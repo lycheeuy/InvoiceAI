@@ -30,10 +30,19 @@ def process_invoice(db: Session, invoice_id: uuid.UUID, router: DocumentRouter, 
     db.refresh(invoice)
 
     try:
-        file_path = Path(invoice.storage_path)
-        if not file_path.is_absolute():
-            pass
-            
+        storage_root = Path(settings.FILE_STORAGE_PATH).resolve()
+        stored_path = Path(invoice.storage_path)
+
+        if stored_path.is_absolute():
+            # Preserve trusted internal and legacy absolute paths.
+            file_path = stored_path.resolve()
+        else:
+            file_path = (storage_root.parent / stored_path).resolve()
+            if not file_path.is_relative_to(storage_root):
+                raise ValueError(
+                    "Stored invoice path is outside the configured storage directory."
+                )
+
         if not file_path.exists():
             raise FileNotFoundError(f"Stored file {file_path} not found.")
 
@@ -88,7 +97,7 @@ def process_invoice(db: Session, invoice_id: uuid.UUID, router: DocumentRouter, 
                     description=li.description or "",
                     quantity=li.quantity,
                     unit_price=li.unit_price,
-                    amount=li.amount if li.amount is not None else 0
+                    amount=li.amount
                 )
                 db.add(db_li)
 

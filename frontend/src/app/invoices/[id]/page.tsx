@@ -310,7 +310,7 @@ export default function InvoiceDetailPage() {
                               <td className="px-4 py-3 text-gray-900">{item.description}</td>
                               <td className="px-4 py-3 text-gray-500 text-right">{item.quantity ?? '—'}</td>
                               <td className="px-4 py-3 text-gray-500 text-right">{item.unit_price ?? '—'}</td>
-                              <td className="px-4 py-3 font-medium text-gray-900 text-right">{item.amount}</td>
+                              <td className="px-4 py-3 font-medium text-gray-900 text-right">{item.amount ?? '—'}</td>
                             </tr>
                           ))
                         )}

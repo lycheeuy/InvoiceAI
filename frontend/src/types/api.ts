@@ -30,7 +30,7 @@ export interface InvoiceLineItemResponse {
   description: string;
   quantity: number | null;
   unit_price: number | null;
-  amount: number;
+  amount: number | null;
   created_at: string;
 }
 

@@ -17,24 +17,46 @@ class InvoiceValidationService:
     # This accounts for invoices that might calculate tax line-by-line vs on the subtotal,
     # or have minor floating-point-like visual truncations.
     TOLERANCE = Decimal("0.01")
-    
+
     @classmethod
     def validate_invoice(cls, invoice: InvoiceSchema) -> FinancialValidationResult:
         errors = []
         warnings = []
-        
+
         # 1. Line Item Validation
         if invoice.line_items:
             for idx, item in enumerate(invoice.line_items):
-                if item.quantity is not None and item.unit_price is not None and item.amount is not None:
+                if item.amount is None:
+                    errors.append(
+                        f"Line item {idx + 1} is missing amount; "
+                        "manual review is required."
+                    )
+
+                if (
+                    item.quantity is not None
+                    and item.unit_price is not None
+                    and item.amount is not None
+                ):
                     calculated_amount = item.quantity * item.unit_price
+
                     if abs(calculated_amount - item.amount) > cls.TOLERANCE:
-                        errors.append(f"Line item {idx + 1} amount ({item.amount}) does not match quantity ({item.quantity}) × unit_price ({item.unit_price}).")
-                else:
-                    warnings.append(f"Line item {idx + 1} is missing quantity, unit_price, or amount; skipping line item arithmetic validation.")
+                        errors.append(
+                            f"Line item {idx + 1} amount ({item.amount}) "
+                            f"does not match quantity ({item.quantity}) "
+                            f"× unit_price ({item.unit_price})."
+                        )
+                elif (
+                    item.quantity is None
+                    or item.unit_price is None
+                ):
+                    warnings.append(
+                        f"Line item {idx + 1} is missing quantity "
+                        "or unit_price; skipping line item arithmetic validation."
+                    )
         else:
-            warnings.append("Missing line items; subtotal cannot be reconstructed from line items.")
-            
+            warnings.append(
+                "Missing line items; subtotal cannot be reconstructed from line items."
+            )
         # 2. Subtotal Validation
         if invoice.subtotal is not None:
             if invoice.line_items:
@@ -47,7 +69,7 @@ class InvoiceValidationService:
                     warnings.append("Some line items are missing amounts; skipping subtotal arithmetic validation.")
         else:
             warnings.append("Subtotal is missing; cannot verify sum of line items.")
-            
+
         # 3. Total Validation
         if invoice.total is not None:
             if invoice.subtotal is not None and invoice.tax is not None:
@@ -61,7 +83,7 @@ class InvoiceValidationService:
                 warnings.append(f"Cannot verify total because {', '.join(missing)} is missing.")
         else:
             warnings.append("Total is missing; cannot verify subtotal + tax.")
-            
+
         return FinancialValidationResult(
             is_valid=len(errors) == 0,
             errors=errors,
