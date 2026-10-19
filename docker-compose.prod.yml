@@ -38,6 +38,25 @@ services:
       timeout: 5s
       retries: 5
 
+
+  invoiceai-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: /api/v1
+        INVOICEAI_API_INTERNAL_URL: http://invoiceai-api:8000
+    image: invoiceai-frontend:latest
+    container_name: invoiceai-frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      invoiceai-api:
+        condition: service_started
+    networks:
+      - invoiceai-network
+
 networks:
   invoiceai-network:
     name: invoiceai-network
