@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, FormEvent } from "react";
 import { useParams } from "next/navigation";
 import { apiClient, API_BASE_URL } from "@/lib/api";
-import { InvoiceDetailResponse } from "@/types/api";
+import { InvoiceDetailResponse, InvoiceUpdatePayload } from "@/types/api";
 import Link from "next/link";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Spinner } from "@/components/ui/Spinner";
@@ -90,16 +90,73 @@ export default function InvoiceDetailPage() {
     setSaveSuccess(false);
   };
 
+  const normalizeMonetaryInput = (val: string | number | null | undefined): string | number | null => {
+    if (val === null || val === undefined) return null;
+    if (typeof val === "number") return val;
+
+    let s = val.trim();
+    if (!s) return null;
+
+    s = s.replace(/^(?:Rp\.?|IDR|\$)\s*/i, "").trim();
+    if (s.endsWith(",-")) {
+      s = s.slice(0, -2).trim();
+    }
+    s = s.replace(/\s+/g, "");
+
+    if (/^-?\d{1,3}(?:\.\d{3})+,\d+$/.test(s)) {
+      s = s.replace(/\./g, "").replace(",", ".");
+    } else if (/^-?\d{1,3}(?:,\d{3})+\.\d+$/.test(s)) {
+      s = s.replace(/,/g, "");
+    } else if (/^-?\d{1,3}(?:\.\d{3}){2,}$/.test(s)) {
+      s = s.replace(/\./g, "");
+    } else if (/^-?[1-9]\d{0,2}\.\d{3}$/.test(s)) {
+      s = s.replace(/\./g, "");
+    } else if (/^-?\d{1,3}(?:,\d{3}){2,}$/.test(s)) {
+      s = s.replace(/,/g, "");
+    } else if (/^-?[1-9]\d{0,2},\d{3}$/.test(s)) {
+      s = s.replace(/,/g, "");
+    } else if (/^-?\d+,\d{1,2}$/.test(s)) {
+      s = s.replace(",", ".");
+    }
+
+    return s;
+  };
+
+  const normalizeTextInput = (val: string | number | null | undefined): string | null => {
+    if (val === null || val === undefined) return null;
+    const s = String(val).trim();
+    return s ? s : null;
+  };
+
   const handleSave = async (e: FormEvent) => {
     e.preventDefault();
     try {
       setIsSaving(true);
       setError(null);
-      
-      const updated = await apiClient.updateInvoice(id, formData);
+
+      const payload: InvoiceUpdatePayload = {
+        vendor_name: normalizeTextInput(formData.vendor_name),
+        invoice_number: normalizeTextInput(formData.invoice_number),
+        invoice_date: normalizeTextInput(formData.invoice_date),
+        due_date: normalizeTextInput(formData.due_date),
+        subtotal: normalizeMonetaryInput(formData.subtotal),
+        tax: normalizeMonetaryInput(formData.tax),
+        total: normalizeMonetaryInput(formData.total),
+      };
+
+      const updated = await apiClient.updateInvoice(id, payload);
       setInvoice(updated);
+      setFormData({
+        vendor_name: updated.vendor_name || "",
+        invoice_number: updated.invoice_number || "",
+        invoice_date: updated.invoice_date || "",
+        due_date: updated.due_date || "",
+        subtotal: updated.subtotal !== null ? updated.subtotal : "",
+        tax: updated.tax !== null ? updated.tax : "",
+        total: updated.total !== null ? updated.total : "",
+      });
       setSaveSuccess(true);
-      
+
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to save invoice");
@@ -140,7 +197,7 @@ export default function InvoiceDetailPage() {
             {invoice.file_name}
           </h1>
         </div>
-        
+
         <div className="flex items-center space-x-3">
           {pollingError && (
             <div className="text-sm text-red-600 flex items-center mr-4">
@@ -161,11 +218,11 @@ export default function InvoiceDetailPage() {
 
       {/* Main Split Screen */}
       <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
-        
+
         {/* Left Pane: Document Viewer */}
         <div className="lg:w-1/2 bg-gray-100 rounded-lg border border-gray-300 overflow-hidden flex flex-col h-[50vh] lg:h-full shadow-inner">
-           <iframe 
-             src={`${API_BASE_URL}/invoices/${id}/file`} 
+           <iframe
+             src={`${API_BASE_URL}/invoices/${id}/file`}
              className="w-full h-full border-0"
              title="Invoice Document Viewer"
            />
@@ -183,7 +240,7 @@ export default function InvoiceDetailPage() {
                 </span>
              )}
           </div>
-          
+
           <div className="flex-1 overflow-y-auto p-4 lg:p-6 bg-white">
              {invoice.review_reason && (
                <div className="mb-6 p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded">
@@ -191,7 +248,7 @@ export default function InvoiceDetailPage() {
                  <p className="mt-1 text-sm text-yellow-700">{invoice.review_reason}</p>
                </div>
              )}
-             
+
              {invoice.status === 'FAILED' && invoice.logs && invoice.logs.length > 0 && (
                <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-400 rounded">
                  <h3 className="text-sm font-medium text-red-800">Processing Error</h3>
@@ -206,8 +263,8 @@ export default function InvoiceDetailPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Invoice Number</label>
-                    <input 
-                      type="text" name="invoice_number" 
+                    <input
+                      type="text" name="invoice_number"
                       value={(formData.invoice_number as string) || ''} onChange={handleInputChange}
                       className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border"
                       disabled={isProcessing}
@@ -216,8 +273,8 @@ export default function InvoiceDetailPage() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Vendor Name</label>
-                    <input 
-                      type="text" name="vendor_name" 
+                    <input
+                      type="text" name="vendor_name"
                       value={(formData.vendor_name as string) || ''} onChange={handleInputChange}
                       className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border"
                       disabled={isProcessing}
@@ -226,8 +283,8 @@ export default function InvoiceDetailPage() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Invoice Date</label>
-                    <input 
-                      type="date" name="invoice_date" 
+                    <input
+                      type="date" name="invoice_date"
                       value={(formData.invoice_date as string) || ''} onChange={handleInputChange}
                       className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border"
                       disabled={isProcessing}
@@ -235,8 +292,8 @@ export default function InvoiceDetailPage() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Due Date</label>
-                    <input 
-                      type="date" name="due_date" 
+                    <input
+                      type="date" name="due_date"
                       value={(formData.due_date as string) || ''} onChange={handleInputChange}
                       className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border"
                       disabled={isProcessing}
@@ -250,8 +307,8 @@ export default function InvoiceDetailPage() {
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Subtotal</label>
                     <div className="mt-1 relative rounded-md shadow-sm">
-                      <input 
-                        type="number" step="0.01" name="subtotal" 
+                      <input
+                        type="text" inputMode="decimal" name="subtotal"
                         value={formData.subtotal ?? ''} onChange={handleInputChange}
                         className="block w-full rounded-md border-gray-300 pl-3 pr-12 focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border"
                         disabled={isProcessing}
@@ -262,8 +319,8 @@ export default function InvoiceDetailPage() {
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Tax</label>
                     <div className="mt-1 relative rounded-md shadow-sm">
-                      <input 
-                        type="number" step="0.01" name="tax" 
+                      <input
+                        type="text" inputMode="decimal" name="tax"
                         value={formData.tax ?? ''} onChange={handleInputChange}
                         className="block w-full rounded-md border-gray-300 pl-3 pr-12 focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border"
                         disabled={isProcessing}
@@ -274,8 +331,8 @@ export default function InvoiceDetailPage() {
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Total</label>
                     <div className="mt-1 relative rounded-md shadow-sm">
-                      <input 
-                        type="number" step="0.01" name="total" 
+                      <input
+                        type="text" inputMode="decimal" name="total"
                         value={formData.total ?? ''} onChange={handleInputChange}
                         className="block w-full rounded-md border-gray-300 pl-3 pr-12 focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border font-bold"
                         disabled={isProcessing}
@@ -325,8 +382,8 @@ export default function InvoiceDetailPage() {
                      <div className="bg-gray-900 rounded-md p-4 max-h-48 overflow-y-auto text-xs font-mono space-y-2 shadow-inner">
                         {invoice.logs.map(log => (
                           <div key={log.id} className={`${log.log_level === 'ERROR' ? 'text-red-400' : 'text-green-400'}`}>
-                            <span className="text-gray-500">[{new Date(log.created_at).toLocaleTimeString()}]</span> 
-                            <span className="text-blue-300 ml-2">[{log.stage}]</span> 
+                            <span className="text-gray-500">[{new Date(log.created_at).toLocaleTimeString()}]</span>
+                            <span className="text-blue-300 ml-2">[{log.stage}]</span>
                             <span className="ml-2 text-gray-300">{log.message}</span>
                           </div>
                         ))}

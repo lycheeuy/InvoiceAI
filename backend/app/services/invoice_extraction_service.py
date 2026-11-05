@@ -49,7 +49,10 @@ class InvoiceExtractionService:
             "6. Identify the invoice number, invoice date, and due date. "
             "7. Identify the currency, subtotal, tax, and total. "
             "8. Extract line items when present (description, quantity, unit price, amount). "
-            "9. DO NOT calculate missing values or fix inconsistent totals. You are a semantic parser, not a calculator.\n\n"
+            "9. DO NOT calculate missing values or fix inconsistent totals. You are a semantic parser, not a calculator. "
+            "10. For Indonesian Rupiah (Rp / IDR) amounts, dots (.) are thousand separators and commas (,) are decimal separators "
+            "(e.g., 'Rp 3.725.000' -> 3725000, 'Rp 372.500' -> 372500, 'Rp 4.097.500' -> 4097500). "
+            "Always output monetary values as plain numbers without thousand separators, using a dot (.) only for fractional decimals, and set currency to 'IDR' when 'Rp' or 'IDR' is present.\n\n"
             "Document Text:\n"
             f"{document_text}"
         )
@@ -63,7 +66,7 @@ class InvoiceExtractionService:
                     response_schema=InvoiceSchema,
                 ),
             )
-            
+
             if not response.text:
                 raise InvoiceExtractionError("Gemini API mengembalikan respons kosong.")
 

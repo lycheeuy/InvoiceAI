@@ -6,6 +6,7 @@ import {
   InvoiceDetailResponse,
   InvoiceStatusResponse,
   InvoiceStatus,
+  InvoiceUpdatePayload,
 } from '../types/api';
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
@@ -97,7 +98,7 @@ export const apiClient = {
     return fetchWithHandleError(`${API_BASE_URL}/invoices/${id}/status`);
   },
 
-  updateInvoice: (id: string, data: Partial<InvoiceDetailResponse>): Promise<InvoiceDetailResponse> => {
+  updateInvoice: (id: string, data: InvoiceUpdatePayload): Promise<InvoiceDetailResponse> => {
     return fetchWithHandleError(`${API_BASE_URL}/invoices/${id}`, {
       method: 'PATCH',
       headers: {

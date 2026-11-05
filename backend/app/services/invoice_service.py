@@ -124,21 +124,29 @@ class InvoiceService:
         if update_data.total is not None:
             invoice.total = update_data.total
 
-        # Recreate line items
-        db.query(InvoiceLineItem).filter(InvoiceLineItem.invoice_id == invoice_id).delete()
-        
-        new_line_items = []
-        for i, li in enumerate(update_data.line_items, start=1):
-            db_li = InvoiceLineItem(
-                invoice_id=invoice_id,
-                line_number=i,
-                description=li.description,
-                quantity=li.quantity,
-                unit_price=li.unit_price,
-                amount=li.amount
+        if update_data.line_items is not None:
+            # Recreate line items only when explicitly provided in the PATCH payload
+            db.query(InvoiceLineItem).filter(InvoiceLineItem.invoice_id == invoice_id).delete()
+
+            current_line_items = []
+            for i, li in enumerate(update_data.line_items, start=1):
+                db_li = InvoiceLineItem(
+                    invoice_id=invoice_id,
+                    line_number=i,
+                    description=li.description,
+                    quantity=li.quantity,
+                    unit_price=li.unit_price,
+                    amount=li.amount
+                )
+                current_line_items.append(db_li)
+                db.add(db_li)
+        else:
+            current_line_items = (
+                db.query(InvoiceLineItem)
+                .filter(InvoiceLineItem.invoice_id == invoice_id)
+                .order_by(InvoiceLineItem.line_number)
+                .all()
             )
-            new_line_items.append(db_li)
-            db.add(db_li)
 
         schema_vendor = Vendor(name=invoice.vendor_name) if invoice.vendor_name else None
         schema_line_items = [
@@ -147,9 +155,9 @@ class InvoiceService:
                 quantity=li.quantity,
                 unit_price=li.unit_price,
                 amount=li.amount
-            ) for li in new_line_items
+            ) for li in current_line_items
         ]
-        
+
         validation_schema = InvoiceSchema(
             invoice_number=invoice.invoice_number,
             vendor=schema_vendor,
@@ -174,7 +182,7 @@ class InvoiceService:
             invoice.review_reason = "\n".join(validation_result.errors)
             log_level = "WARNING"
             log_message = "Invoice manually reviewed but still failed financial validation."
-            
+
         log_entry = ProcessingLog(
             invoice_id=invoice_id,
             stage="MANUAL_REVIEW",

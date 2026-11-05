@@ -93,3 +93,23 @@ export interface InvoiceDetailResponse {
   line_items: InvoiceLineItemResponse[];
   logs: ProcessingLogResponse[];
 }
+
+export interface InvoiceLineItemUpdatePayload {
+  id?: string | null;
+  description: string;
+  quantity?: number | string | null;
+  unit_price?: number | string | null;
+  amount?: number | string | null;
+}
+
+export interface InvoiceUpdatePayload {
+  vendor_name?: string | null;
+  invoice_number?: string | null;
+  invoice_date?: string | null;
+  due_date?: string | null;
+  currency?: string | null;
+  subtotal?: number | string | null;
+  tax?: number | string | null;
+  total?: number | string | null;
+  line_items?: InvoiceLineItemUpdatePayload[] | null;
+}

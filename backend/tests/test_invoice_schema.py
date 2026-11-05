@@ -80,3 +80,73 @@ def test_nested_line_items_validate_correctly():
         InvoiceSchema.model_validate(data)
     assert "quantity" in str(exc.value)
 
+
+def test_indonesian_rupiah_monetary_normalization():
+    from backend.app.schemas.invoice import InvoiceUpdateRequest
+
+    invoice = InvoiceSchema.model_validate({
+        "currency": "IDR",
+        "subtotal": "Rp 3.725.000",
+        "tax": "Rp 372.500",
+        "total": "Rp 4.097.500",
+        "line_items": [
+            {
+                "description": "Jasa Konsultasi",
+                "quantity": "1",
+                "unit_price": "3.725.000",
+                "amount": "3.725.000,-",
+            }
+        ],
+    })
+    assert invoice.subtotal == Decimal("3725000")
+    assert invoice.tax == Decimal("372500")
+    assert invoice.total == Decimal("4097500")
+    assert invoice.line_items[0].unit_price == Decimal("3725000")
+    assert invoice.line_items[0].amount == Decimal("3725000")
+
+    update_req = InvoiceUpdateRequest.model_validate({
+        "subtotal": "3.725.000,50",
+        "tax": "372.500",
+        "total": "4.097.500,50",
+        "line_items": [
+            {
+                "description": "Lisensi Software",
+                "quantity": "1",
+                "unit_price": "Rp 3.725.000,50",
+                "amount": "3.725.000,50",
+            }
+        ],
+    })
+    assert update_req.subtotal == Decimal("3725000.50")
+    assert update_req.tax == Decimal("372500")
+    assert update_req.total == Decimal("4097500.50")
+    assert update_req.line_items is not None
+    assert update_req.line_items[0].unit_price == Decimal("3725000.50")
+    assert update_req.line_items[0].amount == Decimal("3725000.50")
+
+    update_req_without_items = InvoiceUpdateRequest.model_validate({
+        "subtotal": "3.725.000",
+    })
+    assert update_req_without_items.line_items is None
+
+
+def test_standard_decimal_and_international_format_preserved():
+    invoice = InvoiceSchema.model_validate({
+        "currency": "USD",
+        "subtotal": "3,725.00",
+        "tax": "372.50",
+        "total": "4,097.50",
+        "line_items": [
+            {
+                "description": "Consulting",
+                "quantity": "1",
+                "unit_price": "3,725",
+                "amount": "10,000",
+            }
+        ],
+    })
+    assert invoice.subtotal == Decimal("3725.00")
+    assert invoice.tax == Decimal("372.50")
+    assert invoice.total == Decimal("4097.50")
+    assert invoice.line_items[0].unit_price == Decimal("3725")
+    assert invoice.line_items[0].amount == Decimal("10000")
