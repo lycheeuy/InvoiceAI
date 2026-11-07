@@ -185,7 +185,7 @@ class LineItem(BaseModel):
     unit_price: Optional[Decimal] = Field(default=None, ge=Decimal('0'))
     amount: Optional[Decimal] = Field(default=None, ge=Decimal('0'))
 
-    @field_validator("unit_price", "amount", mode="before")
+    @field_validator("quantity", "unit_price", "amount", mode="before")
     @classmethod
     def _normalize_monetary(cls, v: object) -> object:
         return normalize_monetary_value(v)
@@ -213,7 +213,7 @@ class InvoiceLineItemUpdateRequest(BaseModel):
     unit_price: Optional[Decimal] = Field(default=None, ge=Decimal('0'))
     amount: Optional[Decimal] = Field(default=None, ge=Decimal('0'))
 
-    @field_validator("unit_price", "amount", mode="before")
+    @field_validator("quantity", "unit_price", "amount", mode="before")
     @classmethod
     def _normalize_monetary(cls, v: object) -> object:
         return normalize_monetary_value(v)

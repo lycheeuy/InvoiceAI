@@ -148,6 +148,7 @@ def test_patch_invoice_preserves_line_items_and_normalizes_idr(client: TestClien
     assert Decimal(data["total"]) == Decimal("4097500.00")
     assert data["status"] == "PROCESSED"
     assert len(data["line_items"]) == 1
+    assert data["line_items"][0]["id"] == str(li.id)
     assert data["line_items"][0]["description"] == "Jasa Pengembangan"
 
 
@@ -209,3 +210,80 @@ def test_patch_invoice_updates_and_clears_line_items_explicitly(client: TestClie
     assert res_clear.status_code == 200
     data_clear = res_clear.json()
     assert data_clear["line_items"] == []
+
+
+def test_patch_invoice_multiple_line_items_lifecycle(client: TestClient, db_session: Session):
+    inv_id = uuid4()
+    inv = Invoice(
+        id=inv_id,
+        file_name="multi_items.pdf",
+        storage_path="multi_items.pdf",
+        file_hash="multi_items_hash",
+        file_type="application/pdf",
+        file_size_bytes=500,
+        status=InvoiceStatus.FAILED.value,
+    )
+    db_session.add(inv)
+    db_session.commit()
+
+    # 1. Add multiple line items to an invoice with initially empty line_items
+    res_add = client.patch(
+        f"/api/v1/invoices/{inv_id}",
+        json={
+            "vendor_name": "PT Multi Item",
+            "invoice_number": "INV-MULTI-01",
+            "subtotal": "3.500.000",
+            "tax": "350.000",
+            "total": "3.850.000",
+            "line_items": [
+                {
+                    "description": "Lisensi Cloud",
+                    "quantity": "2",
+                    "unit_price": "1.000.000",
+                    "amount": "2.000.000",
+                },
+                {
+                    "description": "Jasa Integrasi",
+                    "quantity": "1,5",
+                    "unit_price": "1.000.000",
+                    "amount": "1.500.000",
+                },
+            ],
+        },
+    )
+    assert res_add.status_code == 200
+    data_add = res_add.json()
+    assert data_add["status"] == "PROCESSED"
+    assert len(data_add["line_items"]) == 2
+    assert data_add["line_items"][0]["description"] == "Lisensi Cloud"
+    assert Decimal(data_add["line_items"][0]["amount"]) == Decimal("2000000.00")
+    assert data_add["line_items"][1]["description"] == "Jasa Integrasi"
+    assert Decimal(data_add["line_items"][1]["quantity"]) == Decimal("1.5")
+    assert Decimal(data_add["line_items"][1]["amount"]) == Decimal("1500000.00")
+
+    # 2. Remove one item and edit the remaining item
+    existing_id = data_add["line_items"][0]["id"]
+    res_edit_remove = client.patch(
+        f"/api/v1/invoices/{inv_id}",
+        json={
+            "subtotal": "3.000.000",
+            "tax": "300.000",
+            "total": "3.300.000",
+            "line_items": [
+                {
+                    "id": existing_id,
+                    "description": "Lisensi Cloud Enterprise",
+                    "quantity": "3",
+                    "unit_price": "1.000.000",
+                    "amount": "3.000.000",
+                }
+            ],
+        },
+    )
+    assert res_edit_remove.status_code == 200
+    data_edit = res_edit_remove.json()
+    assert data_edit["status"] == "PROCESSED"
+    assert len(data_edit["line_items"]) == 1
+    assert data_edit["line_items"][0]["description"] == "Lisensi Cloud Enterprise"
+    assert Decimal(data_edit["line_items"][0]["quantity"]) == Decimal("3")
+    assert Decimal(data_edit["line_items"][0]["amount"]) == Decimal("3000000.00")

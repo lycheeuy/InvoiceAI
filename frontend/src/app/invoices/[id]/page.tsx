@@ -3,10 +3,33 @@
 import { useEffect, useState, useCallback, FormEvent } from "react";
 import { useParams } from "next/navigation";
 import { apiClient, API_BASE_URL } from "@/lib/api";
-import { InvoiceDetailResponse, InvoiceUpdatePayload } from "@/types/api";
+import { InvoiceDetailResponse, InvoiceLineItemUpdatePayload, InvoiceUpdatePayload } from "@/types/api";
 import Link from "next/link";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Spinner } from "@/components/ui/Spinner";
+
+interface EditableLineItem {
+  localId: string;
+  id?: string | null;
+  description: string;
+  quantity: string | number | null;
+  unit_price: string | number | null;
+  amount: string | number | null;
+}
+
+const mapApiLineItemsToEditable = (
+  items: InvoiceDetailResponse["line_items"] | undefined
+): EditableLineItem[] => {
+  if (!items || !Array.isArray(items)) return [];
+  return items.map((item, idx) => ({
+    localId: item.id || `item-${idx}-${Date.now()}`,
+    id: item.id ?? null,
+    description: item.description ?? "",
+    quantity: item.quantity !== null && item.quantity !== undefined ? item.quantity : "",
+    unit_price: item.unit_price !== null && item.unit_price !== undefined ? item.unit_price : "",
+    amount: item.amount !== null && item.amount !== undefined ? item.amount : "",
+  }));
+};
 
 export default function InvoiceDetailPage() {
   const params = useParams();
@@ -19,6 +42,8 @@ export default function InvoiceDetailPage() {
 
   // Form State
   const [formData, setFormData] = useState<Record<string, string | number | null>>({});
+  const [lineItems, setLineItems] = useState<EditableLineItem[]>([]);
+  const [isLineItemsDirty, setIsLineItemsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -37,6 +62,8 @@ export default function InvoiceDetailPage() {
         tax: data.tax !== null ? data.tax : "",
         total: data.total !== null ? data.total : "",
       });
+      setLineItems(mapApiLineItemsToEditable(data.line_items));
+      setIsLineItemsDirty(false);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to fetch invoice details");
     }
@@ -128,6 +155,71 @@ export default function InvoiceDetailPage() {
     return s ? s : null;
   };
 
+  const calculateLineItemAmount = (
+    qtyVal: string | number | null | undefined,
+    priceVal: string | number | null | undefined
+  ): string | null => {
+    const normQty = normalizeMonetaryInput(qtyVal);
+    const normPrice = normalizeMonetaryInput(priceVal);
+    if (normQty === null || normQty === "" || normPrice === null || normPrice === "") {
+      return null;
+    }
+    const qtyNum = Number(normQty);
+    const priceNum = Number(normPrice);
+    if (!Number.isFinite(qtyNum) || !Number.isFinite(priceNum)) {
+      return null;
+    }
+    const product = Math.round((qtyNum * priceNum + Number.EPSILON) * 100) / 100;
+    return String(product);
+  };
+
+  const handleAddLineItem = () => {
+    setLineItems(prev => [
+      ...prev,
+      {
+        localId: `new-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        id: null,
+        description: "",
+        quantity: "",
+        unit_price: "",
+        amount: "",
+      },
+    ]);
+    setIsLineItemsDirty(true);
+    setSaveSuccess(false);
+  };
+
+  const handleRemoveLineItem = (index: number) => {
+    setLineItems(prev => prev.filter((_, idx) => idx !== index));
+    setIsLineItemsDirty(true);
+    setSaveSuccess(false);
+  };
+
+  const handleLineItemChange = (
+    index: number,
+    field: "description" | "quantity" | "unit_price" | "amount",
+    value: string
+  ) => {
+    setLineItems(prev =>
+      prev.map((item, idx) => {
+        if (idx !== index) return item;
+        const updatedItem: EditableLineItem = {
+          ...item,
+          [field]: value,
+        };
+        if (field === "quantity" || field === "unit_price") {
+          const nextQty = field === "quantity" ? value : item.quantity;
+          const nextPrice = field === "unit_price" ? value : item.unit_price;
+          const autoAmount = calculateLineItemAmount(nextQty, nextPrice);
+          updatedItem.amount = autoAmount ?? "";
+        }
+        return updatedItem;
+      })
+    );
+    setIsLineItemsDirty(true);
+    setSaveSuccess(false);
+  };
+
   const handleSave = async (e: FormEvent) => {
     e.preventDefault();
     try {
@@ -144,6 +236,19 @@ export default function InvoiceDetailPage() {
         total: normalizeMonetaryInput(formData.total),
       };
 
+      if (isLineItemsDirty) {
+        payload.line_items =
+          lineItems.length > 0
+            ? lineItems.map((item): InvoiceLineItemUpdatePayload => ({
+                ...(item.id ? { id: item.id } : {}),
+                description: normalizeTextInput(item.description) ?? "",
+                quantity: normalizeMonetaryInput(item.quantity),
+                unit_price: normalizeMonetaryInput(item.unit_price),
+                amount: normalizeMonetaryInput(item.amount),
+              }))
+            : [];
+      }
+
       const updated = await apiClient.updateInvoice(id, payload);
       setInvoice(updated);
       setFormData({
@@ -155,6 +260,10 @@ export default function InvoiceDetailPage() {
         tax: updated.tax !== null ? updated.tax : "",
         total: updated.total !== null ? updated.total : "",
       });
+      if (Array.isArray(updated.line_items)) {
+        setLineItems(mapApiLineItemsToEditable(updated.line_items));
+      }
+      setIsLineItemsDirty(false);
       setSaveSuccess(true);
 
       setTimeout(() => setSaveSuccess(false), 3000);
@@ -342,32 +451,102 @@ export default function InvoiceDetailPage() {
                   </div>
                 </div>
 
-                {/* Line Items - Read Only Display */}
-                <h3 className="text-md font-medium text-gray-900 border-b pb-2 pt-4">Line Items</h3>
+                {/* Line Items - Editable */}
+                <div className="flex justify-between items-center border-b pb-2 pt-4">
+                  <h3 className="text-md font-medium text-gray-900">Line Items</h3>
+                  <button
+                    type="button"
+                    onClick={handleAddLineItem}
+                    disabled={isProcessing || isSaving}
+                    className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 transition-colors"
+                  >
+                    + Add Item
+                  </button>
+                </div>
                 <div className="bg-white rounded-md border border-gray-200 overflow-x-auto shadow-sm">
                    <table className="min-w-full divide-y divide-gray-200 text-sm">
                      <thead className="bg-gray-50">
                        <tr>
-                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                         <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Qty</th>
-                         <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Price</th>
-                         <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
+                         <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                         <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase w-24">Qty</th>
+                         <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase w-32">Unit Price</th>
+                         <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase w-32">Amount</th>
+                         <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase w-20">Actions</th>
                        </tr>
                      </thead>
                      <tbody className="divide-y divide-gray-200">
-                        {invoice.line_items.length === 0 ? (
+                        {lineItems.length === 0 ? (
                           <tr>
-                            <td colSpan={4} className="px-4 py-6 text-center text-gray-500">
+                            <td colSpan={5} className="px-4 py-6 text-center text-gray-500">
                               {isProcessing ? "Extracting line items..." : "No line items found."}
                             </td>
                           </tr>
                         ) : (
-                          invoice.line_items.map(item => (
-                            <tr key={item.id} className="hover:bg-gray-50">
-                              <td className="px-4 py-3 text-gray-900">{item.description}</td>
-                              <td className="px-4 py-3 text-gray-500 text-right">{item.quantity ?? '—'}</td>
-                              <td className="px-4 py-3 text-gray-500 text-right">{item.unit_price ?? '—'}</td>
-                              <td className="px-4 py-3 font-medium text-gray-900 text-right">{item.amount ?? '—'}</td>
+                          lineItems.map((item, idx) => (
+                            <tr key={item.localId} className="hover:bg-gray-50">
+                              <td className="px-3 py-2 text-gray-900">
+                                <span className="sr-only">{item.description}</span>
+                                <input
+                                  type="text"
+                                  name={`line_items.${idx}.description`}
+                                  aria-label={`Line item ${idx + 1} description`}
+                                  value={item.description ?? ""}
+                                  onChange={e => handleLineItemChange(idx, "description", e.target.value)}
+                                  disabled={isProcessing || isSaving}
+                                  placeholder="Description"
+                                  className="block w-full min-w-[140px] rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-1.5 border text-gray-900"
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-gray-500 text-right">
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  name={`line_items.${idx}.quantity`}
+                                  aria-label={`Line item ${idx + 1} quantity`}
+                                  value={item.quantity ?? ""}
+                                  onChange={e => handleLineItemChange(idx, "quantity", e.target.value)}
+                                  disabled={isProcessing || isSaving}
+                                  placeholder="—"
+                                  className="block w-20 ml-auto rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-1.5 border text-right text-gray-900"
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-gray-500 text-right">
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  name={`line_items.${idx}.unit_price`}
+                                  aria-label={`Line item ${idx + 1} unit price`}
+                                  value={item.unit_price ?? ""}
+                                  onChange={e => handleLineItemChange(idx, "unit_price", e.target.value)}
+                                  disabled={isProcessing || isSaving}
+                                  placeholder="—"
+                                  className="block w-28 ml-auto rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-1.5 border text-right text-gray-900"
+                                />
+                              </td>
+                              <td className="px-3 py-2 font-medium text-gray-900 text-right">
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  name={`line_items.${idx}.amount`}
+                                  aria-label={`Line item ${idx + 1} amount`}
+                                  value={item.amount ?? ""}
+                                  onChange={e => handleLineItemChange(idx, "amount", e.target.value)}
+                                  disabled={isProcessing || isSaving}
+                                  placeholder="—"
+                                  className="block w-28 ml-auto rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-1.5 border text-right font-medium text-gray-900"
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveLineItem(idx)}
+                                  disabled={isProcessing || isSaving}
+                                  aria-label={`Remove line item ${idx + 1}`}
+                                  className="text-red-600 hover:text-red-800 text-xs font-medium px-2 py-1 rounded hover:bg-red-50 disabled:opacity-50 transition-colors"
+                                >
+                                  Remove
+                                </button>
+                              </td>
                             </tr>
                           ))
                         )}
