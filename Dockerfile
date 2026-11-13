@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY backend/requirements.txt /app/
 
 # Filter out development dependencies and install
-RUN grep -v -E "pytest|httpx" requirements.txt > requirements.prod.txt && \
+RUN grep -v -E "pytest" requirements.txt > requirements.prod.txt && \
     pip install --no-cache-dir --timeout 300 --retries 5 --index-url https://mirrors.aliyun.com/pypi/simple/ -r requirements.prod.txt && \
     rm requirements.txt requirements.prod.txt
 

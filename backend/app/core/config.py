@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str | None = None
     GEMINI_MODEL: str = "gemini-3.8-flash"
 
+    # n8n Webhook Configuration
+    N8N_WEBHOOK_URL: str | None = None
+    N8N_WEBHOOK_TOKEN: str | None = None
+    N8N_WEBHOOK_TIMEOUT: float = 5.0
+
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,
         env_file_encoding="utf-8",

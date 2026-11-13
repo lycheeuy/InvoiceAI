@@ -9,6 +9,7 @@ from backend.app.core.config import settings
 from .router import DocumentRouter
 from backend.app.services.invoice_extraction_service import InvoiceExtractionService
 from backend.app.services.invoice_validation_service import InvoiceValidationService
+from backend.app.services.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +132,8 @@ def process_invoice(db: Session, invoice_id: uuid.UUID, router: DocumentRouter, 
         db.commit()
         db.refresh(invoice)
 
+        NotificationService.notify_invoice_event(invoice)
+
     except Exception as e:
 
         logger.error(f"Failed to process invoice {invoice_id}: {e}")
@@ -146,6 +149,8 @@ def process_invoice(db: Session, invoice_id: uuid.UUID, router: DocumentRouter, 
                     message=str(e)
                 ))
                 db.commit()
+                db.refresh(invoice)
+                NotificationService.notify_invoice_event(invoice)
         except Exception as commit_err:
             db.rollback()
             logger.error(f"Failed to persist FAILED status for invoice {invoice_id}: {commit_err}")

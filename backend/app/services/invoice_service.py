@@ -12,6 +12,7 @@ from backend.app.core.logging import logger
 from backend.app.models.invoice import Invoice, InvoiceStatus
 from backend.app.models.log import ProcessingLog
 from backend.app.services.document import DocumentStorageService
+from backend.app.services.notification_service import NotificationService
 from backend.app.core.exceptions import DuplicateResourceError, DatabaseError
 
 
@@ -191,10 +192,10 @@ class InvoiceService:
             metadata_json={"validation_errors": validation_result.errors, "validation_warnings": validation_result.warnings}
         )
         db.add(log_entry)
-
         try:
             db.commit()
             db.refresh(invoice)
+            NotificationService.notify_invoice_event(invoice)
             return invoice
         except Exception as exc:
             db.rollback()
